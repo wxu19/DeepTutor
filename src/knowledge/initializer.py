@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 """
 Knowledge Base Initialization Script
 
@@ -25,21 +26,23 @@ raganything_path = project_root.parent / "raganything" / "RAG-Anything"
 if raganything_path.exists():
     sys.path.insert(0, str(raganything_path))
 
-from typing import Any
-
 from dotenv import load_dotenv
-from lightrag.llm.openai import openai_complete_if_cache, openai_embed
+from lightrag.llm.openai import openai_complete_if_cache
 from lightrag.utils import EmbeddingFunc
+from raganything import RAGAnything, RAGAnythingConfig
 
-from src.core.core import get_embedding_config, get_llm_config
-from src.core.logging import LightRAGLogContext, get_logger
-from src.knowledge.extract_numbered_items import process_content_list
-from src.knowledge.progress_tracker import ProgressStage, ProgressTracker
-from src.knowledge.raganything_loader import load_raganything
+from src.services.embedding import get_embedding_client, get_embedding_config
+from src.services.llm import get_llm_config
 
 load_dotenv(dotenv_path=".env", override=False)
 
+from src.logging import LightRAGLogContext, get_logger
+
 logger = get_logger("KnowledgeInit")
+
+# Import numbered items extraction functionality
+from src.knowledge.extract_numbered_items import process_content_list
+from src.knowledge.progress_tracker import ProgressStage, ProgressTracker
 
 
 class KnowledgeBaseInitializer:
@@ -69,21 +72,18 @@ class KnowledgeBaseInitializer:
         self.progress_tracker = progress_tracker or ProgressTracker(kb_name, self.base_dir)
 
     def _register_to_config(self):
-        """Register knowledge base to kb_config.json"""
+        """Register KB to kb_config.json."""
         config_file = self.base_dir / "kb_config.json"
-
-        # Read existing config
         if config_file.exists():
             try:
                 with open(config_file, encoding="utf-8") as f:
                     config = json.load(f)
             except Exception as e:
-                logger.warning(f"Failed to read config file: {e}, creating new config")
+                logger.warning(f"Failed to read config: {e}, creating new")
                 config = {"knowledge_bases": {}, "default": None}
         else:
             config = {"knowledge_bases": {}, "default": None}
 
-        # Add new knowledge base
         if "knowledge_bases" not in config:
             config["knowledge_bases"] = {}
 
@@ -93,17 +93,15 @@ class KnowledgeBaseInitializer:
                 "description": f"Knowledge base: {self.kb_name}",
             }
 
-            # If first knowledge base, set as default
             if not config.get("default"):
                 config["default"] = self.kb_name
 
-            # Save config
             try:
                 with open(config_file, "w", encoding="utf-8") as f:
                     json.dump(config, indent=2, ensure_ascii=False, fp=f)
                 logger.info("  ✓ Registered to kb_config.json")
             except Exception as e:
-                logger.warning(f"Failed to update config file: {e}")
+                logger.warning(f"Failed to update config: {e}")
         else:
             logger.info("  ✓ Already registered in kb_config.json")
 
@@ -145,7 +143,7 @@ class KnowledgeBaseInitializer:
         for source in source_files:
             source_path = Path(source)
             if not source_path.exists():
-                logger.warning(f"  ✗ Source file not found: {source}")
+                logger.warning(f"  ⚠ Source file not found: {source}")
                 continue
 
             dest_path = self.raw_dir / source_path.name
@@ -185,26 +183,10 @@ class KnowledgeBaseInitializer:
             total=len(doc_files),
         )
 
-        raganything_cls, raganything_config_cls, import_error = load_raganything()
-        if raganything_cls is None or raganything_config_cls is None:
-            message = (
-                "Advanced document ingestion is disabled because the optional 'raganything' "
-                "package is not installed or failed to load. Install RagAnything alongside this "
-                "project to re-enable PDF/OCR ingestion."
-            )
-            if import_error:
-                message = f"{message}\nDetails: {import_error}"
-            logger.error(message)
-            self.progress_tracker.update(
-                ProgressStage.ERROR,
-                message,
-                error="raganything-missing",
-            )
-            return
-
         # Create RAGAnything configuration
-        config = raganything_config_cls(
+        config = RAGAnythingConfig(
             working_dir=str(self.rag_storage_dir),
+            parser="mineru",
             enable_image_processing=True,
             enable_table_processing=True,
             enable_equation_processing=True,
@@ -212,7 +194,9 @@ class KnowledgeBaseInitializer:
 
         # Get LLM configuration from env_config
         llm_cfg = get_llm_config()
-        llm_model = llm_cfg["model"]
+        llm_model = llm_cfg.model
+        api_key = self.api_key or llm_cfg.api_key
+        base_url = self.base_url or llm_cfg.base_url
 
         # Define LLM model function
         def llm_model_func(prompt, system_prompt=None, history_messages=[], **kwargs):
@@ -221,8 +205,8 @@ class KnowledgeBaseInitializer:
                 prompt,
                 system_prompt=system_prompt,
                 history_messages=history_messages,
-                api_key=self.api_key,
-                base_url=self.base_url,
+                api_key=api_key,
+                base_url=base_url,
                 **kwargs,
             )
 
@@ -249,8 +233,8 @@ class KnowledgeBaseInitializer:
                     system_prompt=None,
                     history_messages=[],
                     messages=messages,
-                    api_key=self.api_key,
-                    base_url=self.base_url,
+                    api_key=api_key,
+                    base_url=base_url,
                     **clean_kwargs,
                 )
             # Traditional single image format
@@ -285,35 +269,49 @@ class KnowledgeBaseInitializer:
                             else {"role": "user", "content": prompt}
                         ),
                     ],
-                    api_key=self.api_key,
-                    base_url=self.base_url,
+                    api_key=api_key,
+                    base_url=base_url,
                     **clean_kwargs,
                 )
             # Pure text format
             return llm_model_func(prompt, system_prompt, history_messages, **kwargs)
 
-        # Define embedding function
-        embedding_cfg = self.embedding_cfg
-        embedding_api_key = embedding_cfg["api_key"] or self.api_key
-        embedding_base_url = embedding_cfg["base_url"] or self.base_url
+        # Define embedding function using unified EmbeddingClient
+        # Reset client to pick up latest config (including active provider from UI)
+        from src.services.embedding import reset_embedding_client
 
-        # CRITICAL: Use openai_embed.func to avoid double decoration
-        # openai_embed is already decorated with @wrap_embedding_func_with_attrs
-        # We need to access the unwrapped function to prevent dimension mismatch
+        reset_embedding_client()
+
+        embedding_cfg = get_embedding_config()  # Reload config
+        embedding_client = get_embedding_client()  # Get fresh client with new config
+
+        logger.info(
+            f"Using embedding: {embedding_cfg.model} "
+            f"({embedding_cfg.dim}D, {embedding_cfg.binding})"
+        )
+
+        # Create async wrapper compatible with LightRAG's expected signature
+        async def unified_embed_func(texts):
+            """
+            Unified embedding function using EmbeddingClient.
+            Supports multiple providers: OpenAI, Cohere, Jina, Ollama, etc.
+            """
+            try:
+                embeddings = await embedding_client.embed(texts)
+                return embeddings
+            except Exception as e:
+                logger.error(f"Embedding failed: {e}")
+                raise
+
         embedding_func = EmbeddingFunc(
-            embedding_dim=embedding_cfg["dim"],
-            max_token_size=embedding_cfg["max_tokens"],
-            func=lambda texts: openai_embed.func(
-                texts,
-                model=embedding_cfg["model"],
-                api_key=embedding_api_key,
-                base_url=embedding_base_url,
-            ),
+            embedding_dim=embedding_cfg.dim,
+            max_token_size=embedding_cfg.max_tokens,
+            func=unified_embed_func,
         )
 
         # Initialize RAGAnything with log forwarding
         with LightRAGLogContext(scene="knowledge_init"):
-            rag = raganything_cls(
+            rag = RAGAnything(
                 config=config,
                 llm_model_func=llm_model_func,
                 vision_model_func=vision_model_func,
@@ -337,10 +335,14 @@ class KnowledgeBaseInitializer:
             try:
                 # Use RAGAnything's process_document_complete method
                 # This method handles document parsing, content extraction, and insertion
-                await rag.process_document_complete(
-                    file_path=str(doc_file),
-                    output_dir=str(self.content_list_dir),
-                    parse_method="auto",
+                logger.info("  → Starting document processing...")
+                await asyncio.wait_for(
+                    rag.process_document_complete(
+                        file_path=str(doc_file),
+                        output_dir=str(self.content_list_dir),
+                        parse_method="auto",
+                    ),
+                    timeout=600.0,  # 10 minute timeout
                 )
                 logger.info(f"  ✓ Successfully processed: {doc_file.name}")
 
@@ -350,6 +352,18 @@ class KnowledgeBaseInitializer:
                 if content_list_file.exists():
                     logger.info(f"  ✓ Content list saved: {content_list_file.name}")
 
+            except asyncio.TimeoutError:
+                error_msg = "Processing timeout (>10 minutes)"
+                logger.error(f"  ✗ Timeout processing {doc_file.name}")
+                logger.error("  Possible causes: Large PDF, slow embedding API, network issues")
+                self.progress_tracker.update(
+                    ProgressStage.ERROR,
+                    f"Timeout processing: {doc_file.name}",
+                    current=idx,
+                    total=len(doc_files),
+                    file_name=doc_file.name,
+                    error=error_msg,
+                )
             except Exception as e:
                 error_msg = str(e)
                 logger.error(f"  ✗ Error processing {doc_file.name}: {error_msg}")
@@ -478,6 +492,11 @@ class KnowledgeBaseInitializer:
             total=0,
         )
 
+        # Get LLM config for credentials
+        llm_cfg = get_llm_config()
+        api_key = self.api_key or llm_cfg.api_key
+        base_url = self.base_url or llm_cfg.base_url
+
         output_file = self.kb_dir / "numbered_items.json"
         content_list_files = sorted(self.content_list_dir.glob("*.json"))
 
@@ -513,8 +532,8 @@ class KnowledgeBaseInitializer:
                 process_content_list(
                     content_list_file=content_list_file,
                     output_file=output_file,
-                    api_key=self.api_key,
-                    base_url=self.base_url,
+                    api_key=api_key,
+                    base_url=base_url,
                     batch_size=batch_size,
                     merge=merge,
                 )
@@ -541,7 +560,7 @@ class KnowledgeBaseInitializer:
                 ProgressStage.ERROR, "Numbered items extraction failed", error=error_msg
             )
 
-    async def display_statistics(self, rag: Any):
+    async def display_statistics(self, rag: RAGAnything):
         """Display knowledge base statistics"""
         logger.info("\n" + "=" * 50)
         logger.info("Knowledge Base Statistics")
@@ -614,10 +633,8 @@ Example usage:
         default="./knowledge_bases",
         help="Base directory for knowledge bases (default: ./knowledge_bases)",
     )
-    parser.add_argument(
-        "--api-key", default=os.getenv("LLM_BINDING_API_KEY"), help="OpenAI API key"
-    )
-    parser.add_argument("--base-url", default=os.getenv("LLM_BINDING_HOST"), help="API base URL")
+    parser.add_argument("--api-key", default=os.getenv("LLM_API_KEY"), help="OpenAI API key")
+    parser.add_argument("--base-url", default=os.getenv("LLM_HOST"), help="API base URL")
     parser.add_argument(
         "--skip-processing",
         action="store_true",
@@ -640,7 +657,7 @@ Example usage:
     # Check API key
     if not args.skip_processing and not args.api_key:
         logger.error("Error: OpenAI API key required")
-        logger.error("Set LLM_BINDING_API_KEY environment variable or use --api-key option")
+        logger.error("Set LLM_API_KEY environment variable or use --api-key option")
         return
 
     # Collect document files
