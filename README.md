@@ -318,216 +318,139 @@ cp .env.example .env
 
 ### Step 2: Choose Your Installation Method
 
-<table>
-<tr>
-<td width="50%" valign="top">
+#### 🐳 Option A: Docker Deployment
 
-<h3 align="center">🐳 Docker Deployment</h3>
-<p align="center"><b>Recommended</b> — No Python/Node.js setup</p>
-
----
+> No Python/Node.js setup required
 
 **Prerequisites**: [Docker](https://docs.docker.com/get-docker/) & [Docker Compose](https://docs.docker.com/compose/install/)
 
-<details open>
-<summary><b>🔨 Option A: Build from Source</b></summary>
+**Quick Start** — Build from source:
 
 ```bash
-# Build and start (~5-10 min first run)
-docker compose up --build -d
-
-# View logs
-docker compose logs -f
+docker compose up --build -d    # Build and start (~5-10 min first run)
+docker compose logs -f          # View logs
 ```
 
-</details>
-
-<details>
-<summary><b>🚀 Option B: Pre-built Image (Fastest)</b></summary>
-
-**Choose the right image for your architecture:**
-
-| Architecture | Image Tag | Use Case |
-|:-------------|:----------|:---------|
-| **AMD64** | `ghcr.io/hkuds/deeptutor:latest` | Intel/AMD processors (most cloud servers, Windows/Linux PCs) |
-| **ARM64** | `ghcr.io/hkuds/deeptutor:latest-arm64` | Apple Silicon (M1/M2/M3/M4), ARM servers (AWS Graviton, Raspberry Pi) |
+**Or use pre-built image** (faster):
 
 ```bash
-# For AMD64 (Intel/AMD) - Linux/macOS
+# Linux/macOS (AMD64)
 docker run -d --name deeptutor \
   -p 8001:8001 -p 3782:3782 \
-  -e LLM_MODEL=gpt-4o \
-  -e LLM_API_KEY=your-api-key \
-  -e LLM_HOST=https://api.openai.com/v1 \
-  -e EMBEDDING_MODEL=text-embedding-3-large \
-  -e EMBEDDING_API_KEY=your-api-key \
-  -e EMBEDDING_HOST=https://api.openai.com/v1 \
+  --env-file .env \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/config:/app/config:ro \
   ghcr.io/hkuds/deeptutor:latest
 
-# For ARM64 (Apple Silicon M1/M2/M3/M4, ARM servers)
-docker run -d --name deeptutor \
-  -p 8001:8001 -p 3782:3782 \
-  -e LLM_MODEL=gpt-4o \
-  -e LLM_API_KEY=your-api-key \
-  -e LLM_HOST=https://api.openai.com/v1 \
-  -e EMBEDDING_MODEL=text-embedding-3-large \
-  -e EMBEDDING_API_KEY=your-api-key \
-  -e EMBEDDING_HOST=https://api.openai.com/v1 \
-  -v $(pwd)/data:/app/data \
-  -v $(pwd)/config:/app/config:ro \
-  ghcr.io/hkuds/deeptutor:latest-arm64
-
+# Apple Silicon (ARM64): use ghcr.io/hkuds/deeptutor:latest-arm64
 # Windows PowerShell: use ${PWD} instead of $(pwd)
-docker run -d --name deeptutor `
-  -p 8001:8001 -p 3782:3782 `
-  -e LLM_MODEL=gpt-4o `
-  -e LLM_API_KEY=your-api-key `
-  -e LLM_HOST=https://api.openai.com/v1 `
-  -e EMBEDDING_MODEL=text-embedding-3-large `
-  -e EMBEDDING_API_KEY=your-api-key `
-  -e EMBEDDING_HOST=https://api.openai.com/v1 `
-  -v ${PWD}/data:/app/data `
-  -v ${PWD}/config:/app/config:ro `
-  ghcr.io/hkuds/deeptutor:latest
 ```
 
-Or use with `.env` file:
-
-```bash
-# AMD64
-docker run -d --name deeptutor \
-  -p 8001:8001 -p 3782:3782 \
-  --env-file .env \
-  -v $(pwd)/data:/app/data \
-  -v $(pwd)/config:/app/config:ro \
-  ghcr.io/hkuds/deeptutor:latest
-
-# ARM64 (Apple Silicon, ARM servers)
-docker run -d --name deeptutor \
-  -p 8001:8001 -p 3782:3782 \
-  --env-file .env \
-  -v $(pwd)/data:/app/data \
-  -v $(pwd)/config:/app/config:ro \
-  ghcr.io/hkuds/deeptutor:latest-arm64
-```
-
-> 💡 **Tip**: Not sure which architecture? Run `uname -m` in terminal. `x86_64` = AMD64, `arm64`/`aarch64` = ARM64
-
-</details>
-
-**Commands**:
+**Common Commands**:
 
 ```bash
 docker compose up -d      # Start
-docker compose logs -f    # Logs
 docker compose down       # Stop
-docker compose up --build # Rebuild
-
-# Update image (choose your architecture)
-docker pull ghcr.io/hkuds/deeptutor:latest        # AMD64
-docker pull ghcr.io/hkuds/deeptutor:latest-arm64  # ARM64
+docker compose logs -f    # View logs
+docker compose up --build # Rebuild after changes
 ```
 
-> **Dev Mode**: Add `-f docker-compose.dev.yml`
-
 <details>
-<summary><b>☁️ Cloud Deployment Configuration</b></summary>
+<summary>📋 <b>More Docker Options</b> (Pre-built images, Cloud deployment, Custom ports)</summary>
 
-For cloud/remote server deployment, you **must** configure the external API URL so the browser can connect to your backend:
+**Pre-built Image Architecture Reference:**
+
+| Architecture | Image Tag | Use Case |
+|:-------------|:----------|:---------|
+| **AMD64** | `ghcr.io/hkuds/deeptutor:latest` | Intel/AMD (most servers, Windows/Linux PCs) |
+| **ARM64** | `ghcr.io/hkuds/deeptutor:latest-arm64` | Apple Silicon, AWS Graviton, Raspberry Pi |
+
+> 💡 Run `uname -m` to check: `x86_64` = AMD64, `arm64`/`aarch64` = ARM64
+
+**Cloud Deployment** — Must set external API URL:
 
 ```bash
-# Set NEXT_PUBLIC_API_BASE_EXTERNAL to your server's public URL
 docker run -d --name deeptutor \
   -p 8001:8001 -p 3782:3782 \
   -e NEXT_PUBLIC_API_BASE_EXTERNAL=https://your-server.com:8001 \
-  -e LLM_MODEL=gpt-4o \
-  -e LLM_API_KEY=your-api-key \
-  ... other env vars ...
+  --env-file .env \
+  -v $(pwd)/data:/app/data \
   ghcr.io/hkuds/deeptutor:latest
 ```
 
-Or in `.env` file:
-```bash
-NEXT_PUBLIC_API_BASE_EXTERNAL=https://your-server.com:8001
-```
-
 **Custom Ports Example:**
+
 ```bash
-# Using port 9001 for backend and 3000 for frontend
 docker run -d --name deeptutor \
   -p 9001:9001 -p 3000:3000 \
   -e BACKEND_PORT=9001 \
   -e FRONTEND_PORT=3000 \
   -e NEXT_PUBLIC_API_BASE_EXTERNAL=https://your-server.com:9001 \
-  ... other env vars ...
+  --env-file .env \
+  -v $(pwd)/data:/app/data \
   ghcr.io/hkuds/deeptutor:latest
 ```
 
-> ⚠️ **Important**: Without `NEXT_PUBLIC_API_BASE_EXTERNAL`, the frontend defaults to `localhost:8001`, which only works for local development.
-
 </details>
-
-</td>
-<td width="50%" valign="top">
-
-<h3 align="center">💻 Manual Installation</h3>
-<p align="center">For development or non-Docker environments</p>
 
 ---
 
-**Prerequisites**: Python 3.10 ≤ version < 3.14, Node.js 18+
+#### 💻 Option B: Manual Installation
 
-**Set Up Environment**:
+> For development or non-Docker environments
+
+**Prerequisites**: Python 3.10+, Node.js 18+
+
+**1. Set Up Environment**:
 
 ```bash
 # Using conda (Recommended)
-conda create -n deeptutor python=3.10
-conda activate deeptutor
+conda create -n deeptutor python=3.10 && conda activate deeptutor
 
 # Or using venv
-python -m venv venv
-source venv/bin/activate
+python -m venv venv && source venv/bin/activate  # Windows: venv\Scripts\activate
 ```
 
-**Install Dependencies**:
+**2. Install Dependencies**:
 
 ```bash
-# Install core backend dependencies (no project package install)
-poetry install --no-root
-
-# (Optional) Install development extras, e.g., pytest
-poetry install --no-root --extras dev
-
-# Install frontend dependencies
+pip install -r requirements.txt
 npm install --prefix web
 ```
 
-**Launch**:
+**3. Launch**:
 
 ```bash
-# Start web interface
-python scripts/start_web.py
-
-# Or CLI only
-python scripts/start.py
-
+python scripts/start_web.py    # Start frontend + backend
+# Or: python scripts/start.py  # CLI only
 # Stop: Ctrl+C
 ```
 
-> ℹ️ **Optional PDF/OCR ingestion (RagAnything)**
->
-> The knowledge ingestion scripts now load the RagAnything dependency lazily.
-> To enable advanced ingestion locally, clone or install the
-> [`raganything`](https://github.com/cfahlgren1/RAGanything) package alongside
-> this repository so it is available on the Python path. When RagAnything is
-> unavailable the scripts log a clear message and continue with basic
-> ingestion capabilities.
+<details>
+<summary>🔧 <b>Start Frontend & Backend Separately</b></summary>
 
-</td>
-</tr>
-</table>
+**Backend** (FastAPI):
+```bash
+python src/api/run_server.py
+# Or: uvicorn src.api.main:app --host 0.0.0.0 --port 8001 --reload
+```
+
+**Frontend** (Next.js):
+```bash
+cd web && npm install && npm run dev -- -p 3782
+```
+
+**Note**: Create `web/.env.local`:
+```
+NEXT_PUBLIC_API_BASE=http://localhost:8001
+```
+
+| Service | Default Port |
+|:---:|:---:|
+| Backend | `8001` |
+| Frontend | `3782` |
+
+</details>
 
 ### Access URLs
 
@@ -1045,9 +968,6 @@ data/user/research/
   "counters": {
     "plan_counter": 2,
     "block_counters": {"1": 3, "2": 2}
-  ```
-
-  **Install Dependencies**:
   }
 }
 ```
